@@ -175,7 +175,6 @@ def write_lefse(data, labels, samples, features, feature_ids, label_col, file_ou
     
     # write the data 
     vec = data[:, nf]
-    print len(vec)
     for val in vec[:-1]:
       fo.write(str(val) + "\t")
     fo.write(str(vec[-1]) + "\n")
