@@ -1,0 +1,206 @@
+#!/usr/bin/env python
+import sys
+import csv
+import json 
+import numpy as np
+import argparse
+import itertools
+
+__authors__ = "Gregory Ditzler"
+__copyright__ = "Copyright 2014"
+__license__ = "GPL"
+__maintainer__ = "Gregory Ditzler"
+__email__ = "gregory.ditzler@gmail.com"
+__status__ = "v1.0.0"
+
+def load_biom(file_name):
+  """
+  @param file_name Biom file name (string)
+  @output data 
+  @output samples
+  @output features
+  @output feature_ids
+  """
+  try:
+    o = json.loads(open(file_name,"U").read())
+  except Exception, e:
+    exit('Error: could not load biom. "' + str(e) +'"')
+    
+  if o["matrix_type"] == "sparse":
+    data = load_sparse(o)
+  else:
+    data = load_dense(o)
+    
+  samples = []
+  for sid in o["columns"]:
+    samples.append(sid["id"])
+    
+  feature_ids = []
+  features = []
+  for sid in o["rows"]:
+    feature_ids.append(sid["id"])
+    features.append(sid["metadata"]["taxonomy"])
+  return data, samples, features, feature_ids
+
+def load_dense(obj):
+  """
+  @param obj  json dictionary from biom file
+  @output data dense data matrix
+  """
+  n_feat, n_sample = obj["shape"]
+  data = np.array(obj["data"], order="F")
+  return data.transpose()
+
+def load_sparse(obj):
+  """ 
+  @param obj  json dictionary from biom file
+  @output data  dense data matrix
+  """
+  n_feat, n_sample = obj["shape"] 
+  data = np.zeros((n_feat, n_sample),order="F")
+  for val in obj["data"]:
+    data[val[0], val[1]] = val[2]
+  data = data.transpose() 
+  return data
+
+def load_map(file_name):
+  """
+  @param file_name 
+  @output meta_data
+  """
+  meta_data = {}
+  
+  with open(file_name, "rb") as fh:
+    first = fh.readline()
+    if first[0] != "#":
+      exit("Expected tab delimted field labels starting with # in map file on line 1")
+    
+    first = first.strip('#')
+    reader = csv.DictReader(itertools.chain([first], fh), delimiter="\t")
+    try:
+      reader_arr = [row for row in reader]
+      headers = reader.fieldnames
+    except csv.Error as e:
+      exit("Error: map file contains error at line %d: %s" % (reader.line_num, e))
+      
+    if "SampleID" not in headers:
+      exit("Error: no SampleID column in map file")
+      
+    labels = filter(lambda label: label != "SampleID", headers)
+    for row in reader_arr:
+      meta_data[row["SampleID"]] = {}
+      for label in labels:
+        meta_data[row["SampleID"]][label] = row[label]
+  return meta_data
+
+def extract_labels(samples, meta_data, label_col):
+  """
+  @param samples
+  @param meta_data
+  @param label_col
+  @output labels
+  """
+  labels = []
+  for sample_id in samples:
+    if sample_id not in meta_data:
+      exit("Sample " + sample_id + " was not found in map file.")
+    if label_col not in meta_data[sample_id]:
+      exit("Label " + label_col + " was not found in map file.")
+    labels.append(meta_data[sample_id][label_col])
+  return labels 
+
+def build_parser():
+  """
+  @output parser object
+  """
+  parser = argparse.ArgumentParser(
+        description = ("biom2lefse converts a biom & map file -- typically used "
+                       "in Qiime -- to the LefSe file formats."
+                      )
+      )
+  parser.add_argument("-i",
+                      "--input",
+                      help = "biom format file",
+                      required = True)
+  parser.add_argument("-m",
+                      "--map",
+                      help = "map file with the metadata",
+                      required = True)
+  parser.add_argument("-f",
+                      "--field",
+                      help = "field in the map file with the class label",
+                      required = True)
+  parser.add_argument("-o",
+                      "--output",
+                      help = "lefse output file.",
+                      required = True)
+  return parser
+
+def write_lefse(data, labels, samples, features, feature_ids, label_col, file_out):
+  """
+  @param data 
+  @param labels
+  @param samples
+  @param features 
+  @param feature_ids
+  @param label_col
+  @param file_out
+  """
+  fo = open(file_out, "w")
+  
+  # write the class labels to the file
+  fo.write(label_col + "\t")
+  for val in labels[:-1]:
+    fo.write(val + "\t")
+  fo.write(labels[-1] + "\n")
+  
+  # write the sample ids to the file 
+  fo.write("id\t")
+  for val in samples[:-1]:
+    fo.write(str(val) + "\t")
+  fo.write(str(samples[-1]) + "\n")
+
+  # write the abundances 
+  n_samples, n_features = data.shape
+  for nf, feature in enumerate(features):
+    
+    # build up the otu name for lefse format
+    otu_name = ""
+    for i, tax in enumerate(feature):
+      if len(tax) == 3:
+        break
+      else:
+        otu_name += tax[3:].strip() + "|"
+    fo.write(otu_name[:-1] + "\t")
+    
+    # write the data 
+    vec = data[:, nf]
+    print len(vec)
+    for val in vec[:-1]:
+      fo.write(str(val) + "\t")
+    fo.write(str(vec[-1]) + "\n")
+
+  fo.close()
+  return None 
+
+def main():
+  parser = build_parser()
+  args = parser.parse_args()
+
+  data, samples, features, feature_ids = load_biom(args.input)
+  meta_data = load_map(args.map)
+  labels = extract_labels(samples, meta_data, args.field)
+  
+  # lefse docs want the data to be relative abundances 
+  # data_t = data / data.sum(axis=1)[:,np.newaxis]
+
+  sample_ids = [n for n,p in enumerate(samples)]
+
+  # write the lefse file
+  write_lefse(data, labels, sample_ids, features, feature_ids, args.field, args.output)
+  
+  return None
+
+# just call main()
+if __name__ == "__main__":
+  sys.exit(main())
