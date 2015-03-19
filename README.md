@@ -1,5 +1,5 @@
 # About 
-`biom2lefse` is a script to convert a [Biom-format](http://biom-format.org/) file into one that is compatible with [LefSe](https://bitbucket.org/nsegata/lefse). The format for LefSe is different than the Biom format or the old Qiime OTU table formats. `biome2lefse`
+`biom2lefse` is a script to convert a [Biom-format](http://biom-format.org/) file into one that is compatible with [LefSe](https://bitbucket.org/nsegata/lefse). The format for LefSe is different than the Biom format or the old Qiime OTU table formats. 
 
 This software is issued under the MIT License and is provided AS IS.
 
